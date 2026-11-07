@@ -1,41 +1,60 @@
 InterpolationSearch :: [].{
 
-	interpolation_search : List(a), a -> U64 where [a.is_lte : a, a -> Bool, a.is_gt : a, a -> Bool, a.interpolation_factor : a, a, a -> F32]
-	interpolation_search = |lst, target| match lst {
+	a.Comparable :  where [a.is_lt : a, a -> Bool, a.is_lte : a, a -> Bool]
+
+	interpolation_search : (a, a, a -> F32), List(a), a -> U64 where [a.Comparable]
+	interpolation_search = |interpolation_factor, lst, target| match lst {
 		[] => 0
+		[only] if only < target => 1
+		[_] => 0
 		[first, ..] if target <= first => 0
-		[.., last] if target > last => lst.len()
+		[.., last] if last < target => lst.len()
 		[first, .., last] => {
-			f = first.interpolation_factor(target, last)
+			f = interpolation_factor(first, target, last)
 			mid_idx = ((lst.len() - 1).to_f32() * f).to_u64_wrap()
 			match lst.get(mid_idx) {
-				Ok(mid) => if target <= mid {
-					interpolation_search(lst.take_first(mid_idx), target)
+				Ok(mid) => if !(mid < target) {
+					interpolation_search(interpolation_factor, lst.take_first(mid_idx), target)
 				} else {
-					interpolation_search(lst.drop_first(mid_idx + 1), target) + mid_idx + 1
+					interpolation_search(interpolation_factor, lst.drop_first(mid_idx + 1), target) + mid_idx + 1
 				}
-				_ => crash "mid index was out of range"
+				_ => crash "`interpolation_factor` must return an F32 value in [0.0, 1.0] range."
 			}
 		}
-		_ => crash "What case is not covered? I don't understand"
 	}
 
 	# Tests
 
+	## Dec
+	interpolation_factor_dec = |a, b, c| (b - a) / (c - a)
+	interpolation_search_dec = |lst, target| interpolation_search(interpolation_factor_dec, lst, target)
+
+	expect interpolation_search_dec([1.0.F32, 2.0, 3.0], 0.0) == 0
+	expect interpolation_search_dec([1.0.F32, 2.0, 3.0], 1.0) == 0
+	expect interpolation_search_dec([1.0.F32, 2.0, 3.0], 2.0) == 1
+	expect interpolation_search_dec([1.0.F32, 2.0, 3.0], 3.0) == 2
+	expect interpolation_search_dec([1.0.F32, 2.0, 3.0], 4.0) == 3
+
+	## I32
+	interpolation_factor_i32 = |a, b, c| (b - a) / (c - a)
+	interpolation_search_i32 = |lst, target| interpolation_search(interpolation_factor_i32, lst, target)
+
+	expect interpolation_search_i32([1, 2, 3, 3, 3, 4, 5, 6], 0) == 0
+	expect interpolation_search_i32([1, 2, 3, 3, 3, 4, 5, 6], 3) == 2
+
 	## Custom type
 	Item := { val : F32 }.{
+		is_lt : Item, Item -> Bool
+		is_lt = |a, b| a.val < b.val
+
+		is_lte : Item, Item -> Bool
 		is_lte = |a, b| a.val <= b.val
-		is_gt = |a, b| a.val > b.val
-		interpolation_factor = |first, target, last| (target.val - first.val) / (last.val - first.val)
 	}
+	interpolation_factor_item : Item, Item, Item -> F32
+	interpolation_factor_item = |a, b, c| (b.val - a.val) / (c.val - a.val)
+	interpolation_search_item = |lst, target| interpolation_search(interpolation_factor_item, lst, target)
 
 	test_list : List(Item)
 	test_list = [{ val: 1.0 }, { val: 2.0 }, { val: 3.0 }]
-	expect interpolation_search(test_list, { val: 2.0 }) == 1
-
-	## Floats
-	# interpolation_factor : F32, F32, F32 -> F32
-	# interpolation_factor = |a, b, c| (b - a) / (c - a)
-	# expect interpolation_search([1.0.F32, 2.0, 3.0], 2.0) == 1
-
+	expect interpolation_search_item(test_list, Item.{ val: 2.0 }) == 1
 }
